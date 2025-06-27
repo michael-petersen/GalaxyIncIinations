@@ -1,1 +1,1 @@
-# GalaxyModelCode
+# Galaxy Inclinations Code
