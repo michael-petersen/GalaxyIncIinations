@@ -13,7 +13,7 @@ from scipy import interpolate
 #import lintsampler
 
 # if you leave LaguerreAmplitudes in a different file
-from FLEXbase import LaguerreAmplitudes
+from src.FLEXbase import LaguerreAmplitudes
 
 
 
