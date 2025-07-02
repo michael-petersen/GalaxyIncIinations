@@ -13,7 +13,7 @@ from scipy import interpolate
 #import lintsampler
 
 # if you leave LaguerreAmplitudes in a different file
-from src.FLEXbase import LaguerreAmplitudes
+from src.OriginalFlexBase import LaguerreAmplitudes
 
 
 
@@ -185,8 +185,9 @@ class DiscGalaxy(object):
         self.x_centers = (self.x_edges[:-1] + self.x_edges[1:]) / 2
         self.y_centers = (self.y_edges[:-1] + self.y_edges[1:]) / 2
 
-    
-    def make_expansion(self,mmax,nmax,rscl,xmax=10000.,noisy=False): #expands the galaxy image into Laguerre 
+
+    def make_expansion(self,mmax,nmax,rscl,xmax=10000.,noisy=False):
+        #Expands the galaxy image into Laguerre polynomials using the LaguerreAmplitudes class.
         try:
             snapshot = self.img
         except:
@@ -216,22 +217,6 @@ class DiscGalaxy(object):
         self.r = rr
         self.p = pp
         return laguerre
-    
-    def make_pointexpansion(self, mmax, nmax, rscl,noisy=False): #Expands the galaxy points 
-        if self.x is None or self.y is None:
-            raise ValueError("Particle positions not initialized. Cannot compute expansion.")
-
-        rr = np.sqrt(self.x**2 + self.y**2)
-        pp = np.arctan2(self.y, self.x)
-
-        mass = np.ones_like(rr) * (self.M / self.N)  # assume equal mass
-        laguerre = LaguerreAmplitudes(rscl, mmax, nmax, rr, pp, mass,)
-
-        # Save R and phi for possible reconstruction later
-        self.r = rr
-        self.p = pp
-        return laguerre
-
 
 
     def resample_expansion(self,E):
