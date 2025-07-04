@@ -131,7 +131,8 @@ class LaguerreAmplitudes:
                 fftotal += self.coscoefs[m, n] * np.cos(m * pp) * G_j[n]
                 fftotal += self.sincoefs[m, n] * np.sin(m * pp) * G_j[n]
 
-        self.reconstruction = fftotal * 0.5 #/ np.pi
+        self.reconstruction = fftotal * self.M / (2 * np.pi)
+        #self.reconstruction = fftotal * 0.5
         
         
         
