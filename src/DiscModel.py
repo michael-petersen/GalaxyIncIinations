@@ -20,7 +20,7 @@ from src.FLEXbase import LaguerreAmplitudes
 class DiscGalaxy(object):
 
 
-    def __init__(self,N=None,phasespace=None,a=3.,M=1.,vcirc=200.,rmax=100.):
+    def __init__(self,N=None,phasespace=None,a=1.,M=1.,vcirc=200.,rmax=100.):
 
         self.a = a # scale length of the disc
         self.M = M # total mass of the disc
