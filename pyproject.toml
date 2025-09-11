@@ -1,0 +1,38 @@
+[build-system]
+requires = [
+  "setuptools>=64",
+  "setuptools_scm>=8",
+  "wheel",
+  "numpy>=1.17,<2.0",
+  "astropy"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "galaxyinclinations"
+authors = [
+  { name="Mike", email="michael.petersen@roe.ac.uk" },
+]
+description = "Computing galaxy inclinations."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "numpy>=1.17,<2.0",
+  "scipy>=1.9,<2.0",
+]
+keywords = ["python","basis functions"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/meganhmartinez/GalaxyInclinations"
+Documentation = "https://galaxyinclinations.readthedocs.io"
+
+[tool.setuptools_scm]
+
