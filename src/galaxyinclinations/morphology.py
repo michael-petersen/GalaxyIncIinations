@@ -54,11 +54,8 @@ def galaxymorphology(file):
     y, x = np.indices((h,w))
     mask = (x - cx)**2 + (y - cy)**2 <= radius**2
     gray = np.where(mask, gray, 0.0)
-    x_edges = np.linspace(-rmaxy, rmaxy, w + 1)
-    y_edges = np.linspace(-rmaxx, rmaxx, h + 1)
-    x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
-    y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
-    X2, Y2 = np.meshgrid(x_centers, y_centers, indexing='ij')
+
+    X2,Y2 = y-cx, x-cy
 
     R = np.sqrt(X2**2 + Y2**2).ravel()
     I = image_data.ravel()
