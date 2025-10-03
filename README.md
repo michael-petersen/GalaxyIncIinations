@@ -1,2 +1,4 @@
-# Galaxy Inclinations Code
-Relevant function in Function.ipynb file
+# FLEX-enabled Galaxy Inclination Calculator
+
+This package provides a method to compute inclinations and position angles for disc galaxies based on Fourier-Laguerre fitting templates.
+

@@ -1,10 +1,16 @@
 from flex import FLEX
+
 from scipy.stats import linregress
 from astropy.io import fits
+from astropy.wcs import WCS
+
 import numpy as np
 
 
-def galaxymorphology(file):
+def galaxymorphology(file,galaxy=None,data=None):
+
+    if data is not None and galaxy is None:
+        raise ValueError("If 'data' is provided, 'galaxy' must also be defined.")
     
     def FindInc2(eta, A, B, C, D):
         
@@ -41,6 +47,14 @@ def galaxymorphology(file):
     
     with fits.open(file) as hdulist:
         image_data = hdulist[1].data
+
+        if data is not None:
+            ra = data['RA_LEDA'][data['GALAXY']==galaxy]
+            dec = data['DEC_LEDA'][data['GALAXY']==galaxy]
+
+            wcs = WCS(hdulist[1].header)
+            pixel_coords = wcs.world_to_pixel_values(ra, dec)
+            #print("Pixel coordinates (x, y):", pixel_coords)
         
     galaxy_name = file.split("-")[0]
     h, w = image_data.shape
@@ -49,13 +63,20 @@ def galaxymorphology(file):
     rmaxx = h // 2
     rmaxy = w // 2
    
+    # this choice of radius is a hyperparameter -- we may want to tune it
     radius=h//4
-    cx, cy = w//2, h//2
+
+    if data is None:
+        cx, cy = w//2, h//2
+    else:   
+        cx, cy = pixel_coords[0], pixel_coords[1]
+
+
     y, x = np.indices((h,w))
     mask = (x - cx)**2 + (y - cy)**2 <= radius**2
     gray = np.where(mask, gray, 0.0)
 
-    X2,Y2 = y-cx, x-cy
+    X2,Y2 = (y-cx), (x-cy)
 
     R = np.sqrt(X2**2 + Y2**2).ravel()
     I = image_data.ravel()
