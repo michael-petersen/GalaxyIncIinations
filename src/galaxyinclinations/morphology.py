@@ -7,7 +7,7 @@ from astropy.wcs import WCS
 import numpy as np
 
 
-def galaxymorphology(file,galaxy=None,data=None):
+def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
 
     if data is not None and galaxy is None:
         raise ValueError("If 'data' is provided, 'galaxy' must also be defined.")
@@ -81,8 +81,25 @@ def galaxymorphology(file,galaxy=None,data=None):
     R = np.sqrt(X2**2 + Y2**2).ravel()
     I = image_data.ravel()
 
-    # Filter for positive intensities and R <= 80
-    valid = (I > 0) & (R <= 80)
+    valid = (I > 0) & (R <= radius)
+    R_valid = R[valid]
+    I_valid = I[valid]
+    #print(y,x)
+
+    rindx = R_valid.argsort()
+    R_sorted = R_valid[rindx]
+    I_sorted = I_valid[rindx]
+
+    # generate a moving average
+    window_size = 100 # this is a hyperparameter
+    means_R = np.convolve(R_sorted, np.ones(window_size)/window_size, mode='valid')
+    means_I = np.convolve(I_sorted, np.ones(window_size)/window_size, mode='valid')
+    
+    # set the floor for noise
+    # if this fails ... ?
+    maxrad = means_R[np.where(np.log(means_I) < noisefloor)[0][0]]
+    
+    valid = (I > 0) & (R <= maxrad)
     R_valid = R[valid]
     logI_valid = np.log(I[valid])
    
@@ -98,15 +115,18 @@ def galaxymorphology(file,galaxy=None,data=None):
 
     R,P = np.sqrt(X2**2 + Y2**2), np.arctan2(Y2, X2)
 
-    mmax, nmax = 8, 10
+    mmax, nmax = 2, 10
 
 
     L = FLEX(a,mmax,nmax, R.flatten(), P.flatten(), mass=image_data.flatten())
     
     c1 = L.coscoefs; s1 = L.sincoefs
    
-    num = np.sqrt(sum((c1[2, n]**2 + s1[2, n]**2) for n in range(nmax)))
-    den     = sum(abs(c1[0,n])            for n in range(nmax))
+    #num = np.sqrt(sum((c1[2, n]**2 + s1[2, n]**2) for n in range(nmax)))
+    #den     = sum(abs(c1[0,n])            for n in range(nmax))
+
+    num = np.linalg.norm(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))
+    den = np.linalg.norm(L.coscoefs[0])
 
     eta_bt     = num/den
     A=-0.30845928737374684
@@ -118,5 +138,5 @@ def galaxymorphology(file,galaxy=None,data=None):
 
     PA=90+(np.arctan2(s1[2,0],c1[2,0])* 180/np.pi)/2
 
-    return inc_bt, PA, galaxy_name
+    return inc_bt, PA, galaxy_name, a, eta_bt, maxrad, radius
     
