@@ -60,32 +60,33 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
     h, w = image_data.shape
 
     gray=image_data.copy() 
-    rmaxx = h // 2
-    rmaxy = w // 2
-   
-    # this choice of radius is a hyperparameter -- we may want to tune it
-    radius=h//4
 
+
+    # set default
     if data is None:
         cx, cy = w//2, h//2
     else:   
         cx, cy = pixel_coords[0], pixel_coords[1]
 
+    # this choice of radius is a hyperparameter -- we may want to tune it
+    radius=h//4
 
     y, x = np.indices((h,w))
     mask = (x - cx)**2 + (y - cy)**2 <= radius**2
     gray = np.where(mask, gray, 0.0)
 
-    X2,Y2 = (y-cx), (x-cy)
+    # compute the cartesian pixel coordinates relative to center
+    X2,Y2 = (x-cx), (y-cy)
 
+    # created 1d radial profile
     R = np.sqrt(X2**2 + Y2**2).ravel()
     I = image_data.ravel()
 
     valid = (I > 0) & (R <= radius)
     R_valid = R[valid]
     I_valid = I[valid]
-    #print(y,x)
 
+    # sort by radius for fit
     rindx = R_valid.argsort()
     R_sorted = R_valid[rindx]
     I_sorted = I_valid[rindx]
@@ -96,8 +97,11 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
     means_I = np.convolve(I_sorted, np.ones(window_size)/window_size, mode='valid')
     
     # set the floor for noise
-    # if this fails ... ?
-    maxrad = means_R[np.where(np.log(means_I) < noisefloor)[0][0]]
+    # if this fails, fall back to half image size
+    try:
+        maxrad = means_R[np.where(np.log(means_I) < noisefloor)[0][0]]
+    except:
+        maxrad = radius
     
     valid = (I > 0) & (R <= maxrad)
     R_valid = R[valid]
@@ -106,37 +110,27 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
     # Linear regression
     slope, intercept, r_value, p_value, std_err = linregress(R_valid, logI_valid)
     scale_length = -1 / slope
-    if scale_length < 0:
-        scale_length = 50
-    if scale_length > 100:
-        scale_length = 30
-    
-    a=scale_length*1.5
 
-    R,P = np.sqrt(X2**2 + Y2**2), np.arctan2(Y2, X2)
+    # we might want to check for bogus values here: but we can catch these on return as well
+    
+    # compute the cylindrical coordinates
+    R,P = np.sqrt(X2**2 + Y2**2).flatten(), np.arctan2(Y2, X2).flatten()
+    I = image_data.flatten()
+    galaxy_pixels = (R <= maxrad)
 
     mmax, nmax = 2, 10
 
+    afacs = np.array([0.75,1., 1.5, 2.0, 2.5,3.0])
+    etalist = np.zeros(len(afacs))
+    palist = np.zeros(len(afacs))
+    for i, afac in enumerate(afacs):
+        L = FLEX(scale_length*afac,mmax,nmax, R[galaxy_pixels], P[galaxy_pixels], mass=I[galaxy_pixels])
 
-    L = FLEX(a,mmax,nmax, R.flatten(), P.flatten(), mass=image_data.flatten())
-    
-    c1 = L.coscoefs; s1 = L.sincoefs
-   
-    #num = np.sqrt(sum((c1[2, n]**2 + s1[2, n]**2) for n in range(nmax)))
-    #den     = sum(abs(c1[0,n])            for n in range(nmax))
+        num = np.linalg.norm(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))
+        den = np.linalg.norm(L.coscoefs[0])
 
-    num = np.linalg.norm(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))
-    den = np.linalg.norm(L.coscoefs[0])
+        etalist[i]     = num/den
+        palist[i]      = np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2)*np.arctan2(L.sincoefs[2], L.coscoefs[2]))/np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))  # in radians
 
-    eta_bt     = num/den
-    A=-0.30845928737374684
-    B=-1.6564105427131928
-    C=6.430938401182824
-    D=0.3145522357466893
-
-    inc_bt=FindInc2(eta_bt,A,B,C,D)
-
-    PA=90+(np.arctan2(s1[2,0],c1[2,0])* 180/np.pi)/2
-
-    return inc_bt, PA, galaxy_name, a, eta_bt, maxrad, radius
+    return etalist, palist, scale_length, galaxy_name, radius, maxrad
     
