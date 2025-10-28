@@ -6,43 +6,44 @@ from astropy.wcs import WCS
 
 import numpy as np
 
+def FindInc2(eta, A, B, C, D):
+    
+    if eta>0.5:
+        inc=90
+    else:
+        # 1) Safe inverse argument (A can be negative)
+        x = np.clip((eta - D) / A, -1.0, 1.0)
+
+        # 2) Two branches from cos symmetry, all in radians
+        a = np.arccos(x)                # in [0, pi]
+        i1 = (a - C) / B
+        i2 = (-a - C) / B
+
+        # 3) Convert candidates to degrees
+        cand = np.rad2deg(np.array([i1, i2]))
+
+        # 4) Reduce by the period in degrees: P = 2π/|B| (then to degrees)
+        P = np.rad2deg(2*np.pi / abs(B))
+        cand = cand % P                 # map into one period
+
+        # 5) Fold into [0, 180], then reflect >90 across 90 to get [0, 90]
+        cand = np.where(cand > 180.0, cand - 180.0, cand)
+        cand = np.where(cand > 90.0, 180.0 - cand, cand)
+
+        # 6) Pick the candidate that best reproduces eta (keeps you on the line)
+        def model(i_deg):
+            return A*np.cos(B*np.deg2rad(i_deg) + C) + D
+
+        errs = np.abs(model(cand) - eta)
+        inc=float(cand[np.argmin(errs)])
+    return inc
+
+
 
 def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
 
     if data is not None and galaxy is None:
         raise ValueError("If 'data' is provided, 'galaxy' must also be defined.")
-    
-    def FindInc2(eta, A, B, C, D):
-        
-        if eta>0.5:
-            inc=90
-        else:
-            # 1) Safe inverse argument (A can be negative)
-            x = np.clip((eta - D) / A, -1.0, 1.0)
-
-            # 2) Two branches from cos symmetry, all in radians
-            a = np.arccos(x)                # in [0, pi]
-            i1 = (a - C) / B
-            i2 = (-a - C) / B
-
-            # 3) Convert candidates to degrees
-            cand = np.rad2deg(np.array([i1, i2]))
-
-            # 4) Reduce by the period in degrees: P = 2π/|B| (then to degrees)
-            P = np.rad2deg(2*np.pi / abs(B))
-            cand = cand % P                 # map into one period
-
-            # 5) Fold into [0, 180], then reflect >90 across 90 to get [0, 90]
-            cand = np.where(cand > 180.0, cand - 180.0, cand)
-            cand = np.where(cand > 90.0, 180.0 - cand, cand)
-
-            # 6) Pick the candidate that best reproduces eta (keeps you on the line)
-            def model(i_deg):
-                return A*np.cos(B*np.deg2rad(i_deg) + C) + D
-
-            errs = np.abs(model(cand) - eta)
-            inc=float(cand[np.argmin(errs)])
-        return inc
     
     
     with fits.open(file) as hdulist:
@@ -59,9 +60,6 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
     galaxy_name = file.split("-")[0]
     h, w = image_data.shape
 
-    gray=image_data.copy() 
-
-
     # set default
     if data is None:
         cx, cy = w//2, h//2
@@ -73,7 +71,6 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
 
     y, x = np.indices((h,w))
     mask = (x - cx)**2 + (y - cy)**2 <= radius**2
-    gray = np.where(mask, gray, 0.0)
 
     # compute the cartesian pixel coordinates relative to center
     X2,Y2 = (x-cx), (y-cy)
@@ -121,15 +118,19 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
     mmax, nmax = 2, 10
 
     afacs = np.array([0.75,1., 1.5, 2.0, 2.5,3.0])
-    etalist = np.zeros(len(afacs))
+    etalist = np.zeros([3,len(afacs)])
     palist = np.zeros(len(afacs))
     for i, afac in enumerate(afacs):
         L = FLEX(scale_length*afac,mmax,nmax, R[galaxy_pixels], P[galaxy_pixels], mass=I[galaxy_pixels])
 
-        num = np.linalg.norm(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))
-        den = np.linalg.norm(L.coscoefs[0])
+        A2 = np.linalg.norm(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))
+        A1 = np.linalg.norm(np.sqrt(L.coscoefs[1]**2 + L.sincoefs[1]**2))
+        A0 = np.linalg.norm(L.coscoefs[0])
 
-        etalist[i]     = num/den
+        etalist[0,i]     = A0
+        etalist[1,i]     = A1
+        etalist[2,i]     = A2
+        
         palist[i]      = np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2)*np.arctan2(L.sincoefs[2], L.coscoefs[2]))/np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))  # in radians
 
     return etalist, palist, scale_length, galaxy_name, radius, maxrad
