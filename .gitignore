@@ -1,7 +1,9 @@
 src/*egg*
-
+zfits/
 sandbox/
 build/
-
+Data/
+Gfits/
+rfits/
 .DS_Store
 .ipynb_checkpoints
