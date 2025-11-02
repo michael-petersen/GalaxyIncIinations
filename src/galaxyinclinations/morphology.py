@@ -7,6 +7,53 @@ from astropy.wcs import WCS
 import numpy as np
 
 def FindInc2(eta, A, B, C, D):
+    """
+    Return the inclination angle (in degrees) that corresponds to an observed value eta
+    by inverting a cosine model.
+    This function inverts the model
+        eta = A * cos(B * i_rad + C) + D
+    for the inclination i (returned in degrees, constrained to [0, 90]). The routine
+    handles numerical robustness and the cosine symmetry/periodicity by:
+      - treating a special-case saturation (if eta > 0.5 the function returns 90.0),
+      - computing a safe inverse argument x = (eta - D) / A and clipping it to [-1, 1],
+      - forming the two symmetric arccos solutions and converting them from radians to
+        degrees,
+      - reducing candidate angles by the cosine period and folding into [0, 90],
+      - evaluating the forward model for both candidates and returning the one with
+        the smallest absolute residual to the input eta.
+    Parameters
+    ----------
+    eta : float
+        Observed quantity to invert (scalar). Expected to be finite.
+    A : float
+        Amplitude of the cosine term. Must be non-zero (division by zero otherwise).
+    B : float
+        Angular scaling factor used in the cosine argument. Must be non-zero.
+        B and C are used such that B * theta + C is the argument to cos, where theta
+        is in radians.
+    C : float
+        Phase offset (radians) passed directly into the cosine argument.
+    D : float
+        Vertical offset of the cosine model.
+    Returns
+    -------
+    float
+        Inclination angle in degrees, constrained to the interval [0.0, 90.0].
+    Raises
+    ------
+    ZeroDivisionError
+        If A == 0 or B == 0 (these produce divisions by zero in the inversion).
+    ValueError
+        If inputs are not finite scalars.
+    Notes
+    -----
+    - All trigonometric operations inside the function use radians. Provide C in
+      radians and interpret B consistently (so that B * i_rad + C is dimensionally correct).
+    - The implementation clips the inverse cosine argument to [-1, 1] to avoid NaNs due
+      to floating-point rounding and then selects the candidate angle that best
+      reproduces the observed eta.
+    - The function is intended for scalar inputs (not vectorized across arrays).
+    """
     
     if eta>0.5:
         inc=90
@@ -38,6 +85,57 @@ def FindInc2(eta, A, B, C, D):
         inc=float(cand[np.argmin(errs)])
     return inc
 
+
+def determine_background_radius(R, I, noisefloor, window_size=100):
+    """
+    Determine the radius at which the azimuthally-averaged intensity profile falls to a specified noise floor.
+    Comment: Searches the smoothed (moving-average) radial intensity profile for the first radius where log(intensity) < noisefloor.
+    Parameters
+    ----------
+    R : array-like, shape (N,)
+        Radial coordinates for each pixel/sample. Will be sorted internally; values may be any real numbers.
+    I : array-like, shape (N,)
+        Intensity values corresponding to R. Values should be positive for the logarithm; zeros or negatives will produce -inf or runtime warnings.
+    noisefloor : float
+        Threshold applied to np.log(smoothed_intensity). The function returns the radius corresponding to the first smoothed bin whose log(intensity) is below this threshold.
+    window_size : int, optional
+        Size of the moving-average window used for smoothing the intensity profile. Default is 100 samples
+    Returns
+    -------
+    float
+        maxrad: The radius at which the smoothed log-intensity first drops below `noisefloor`. If no such radius is found or an error occurs (e.g., due to invalid values), the function falls back to the maximum of R (np.nanmax(R)).
+    Behavior and notes
+    ------------------
+    - The inputs R and I are sorted by R internally before computing the moving average.
+    - A fixed moving-average window size of 100 samples is used (hyperparameter). The convolution uses mode='valid', so the smoothed arrays are shorter than the original by window_size-1.
+    - The returned radius is taken from the smoothed radius array corresponding to the first bin where np.log(smoothed_intensity) < noisefloor.
+    - If smoothed intensities contain non-positive values, np.log will yield -inf or NaN; such cases may trigger the fallback behavior.
+    - The function catches exceptions arising during the threshold search and returns np.nanmax(R) as a conservative fallback.
+    Example
+    -------
+    >>> import numpy as np
+    >>> R = np.linspace(0, 100, 1000)
+    >>> I = np.exp(-R/20) + 0.001 * np.random.randn(1000)
+    >>> determine_background_radius(R, I, noisefloor=-7.0)
+    """
+
+    # sort by radius for fit
+    rindx = R.argsort()
+    R_sorted = R[rindx]
+    I_sorted = I[rindx]
+
+    # generate a moving average
+    means_R = np.convolve(R_sorted, np.ones(window_size)/window_size, mode='valid')
+    means_I = np.convolve(I_sorted, np.ones(window_size)/window_size, mode='valid')
+    
+    # set the floor for noise
+    # if this fails, fall back to half image size
+    try:
+        maxrad = means_R[np.where(np.log(means_I) < noisefloor)[0][0]]
+    except:
+        maxrad = np.nanmax(R)
+
+    return maxrad
 
 
 def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
@@ -83,22 +181,7 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
     R_valid = R[valid]
     I_valid = I[valid]
 
-    # sort by radius for fit
-    rindx = R_valid.argsort()
-    R_sorted = R_valid[rindx]
-    I_sorted = I_valid[rindx]
-
-    # generate a moving average
-    window_size = 100 # this is a hyperparameter
-    means_R = np.convolve(R_sorted, np.ones(window_size)/window_size, mode='valid')
-    means_I = np.convolve(I_sorted, np.ones(window_size)/window_size, mode='valid')
-    
-    # set the floor for noise
-    # if this fails, fall back to half image size
-    try:
-        maxrad = means_R[np.where(np.log(means_I) < noisefloor)[0][0]]
-    except:
-        maxrad = radius
+    maxrad = determine_background_radius(R_valid, I_valid, noisefloor)
     
     valid = (I > 0) & (R <= maxrad)
     R_valid = R[valid]
@@ -117,9 +200,9 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
 
     mmax, nmax = 2, 10
 
-    afacs = np.array([0.75,1., 1.5, 2.0, 2.5,3.0])
+    afacs = np.array([0.75,1., 1.5, 2.0, 2.5, 3.0])
     etalist = np.zeros([3,len(afacs)])
-    palist = np.zeros(len(afacs))
+    palist = np.zeros([2,len(afacs)])
     for i, afac in enumerate(afacs):
         L = FLEX(scale_length*afac,mmax,nmax, R[galaxy_pixels], P[galaxy_pixels], mass=I[galaxy_pixels])
 
@@ -131,7 +214,12 @@ def galaxymorphology(file,galaxy=None,data=None,noisefloor=-5.):
         etalist[1,i]     = A1
         etalist[2,i]     = A2
         
-        palist[i]      = np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2)*np.arctan2(L.sincoefs[2], L.coscoefs[2]))/np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))  # in radians
+        # if you take the average, you will smear out some signal
+        palist[0,i]      = np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2)*np.arctan2(L.sincoefs[2], L.coscoefs[2]))/np.nansum(np.sqrt(L.coscoefs[2]**2 + L.sincoefs[2]**2))  # in radians
+
+        # try PA that is just n=0?
+        palist[1,i] = np.arctan2(L.sincoefs[2][0], L.coscoefs[2][0])  # in radians
+
 
     return etalist, palist, scale_length, galaxy_name, radius, maxrad
     
